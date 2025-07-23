@@ -25,6 +25,8 @@ This PoC explores how to:
 
 ## 🚀 Live Demo Setup
 
+### 0. Edit the index.html and change the domain in the fetch calls to your mock endpoint.
+
 ### 1. Deploy to Netlify (or similar static host)
 
 You can deploy each file from this repo directly:
