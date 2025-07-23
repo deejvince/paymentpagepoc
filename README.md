@@ -49,11 +49,11 @@ Create an endpoint, e.g.
 `https://paypagemockapi.free.beeceptor.com`
 
 #### Mock rules:
-| Condition | Response |
-|----------|----------|
-| `amount=10` | `{ "redirectUrl": "https://psp.../psp.html?returnUrl=..." }` |
-| `amount=20` | `{ "fields": [{ "name": "email", "label": "Email" }, ...] }` |
-| `amount=50` | Same as 10, but for high value |
+| Method and PAth| Condition | Response |
+|----------|----------|----------|
+| POST /api/payment/init| `amount=10` | `{ "redirectUrl": "https://psp.../psp.html?returnUrl=..." }` |
+| POST /api/payment/init | `amount=20` | `{ "fields": [{ "name": "email", "label": "Email" }, ...] }` |
+| POST /api/payment/init | `amount=50` | Same as 10, but for high value |
 
 For `/api/payment/submit-fields`, return:
 ```json
