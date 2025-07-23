@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Returning…</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 40px;
+      text-align: center;
+    }
+    .status {
+      font-size: 20px;
+      margin-top: 20px;
+    }
+    .ok { color: #00b894; }
+    .fail { color: #e17055; }
+  </style>
+</head>
+<body>
+  <h2>Returning to your payment session…</h2>
+  <div class="status" id="msg"></div>
+
+  <script>
+    const urlParams = new URLSearchParams(location.search);
+    const status = urlParams.get('status');
+    const returnUrl = localStorage.getItem('paymentReturn');
+
+    // Try postMessage to parent
+    let posted = false;
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+          paymentResult: status === 'ok' ? 'success' : 'failure'
+        }, '*');
+        posted = true;
+        setTimeout(() => window.close(), 500); // give time to receive
+      }
+    } catch {}
+
+    // Fallback full redirect
+    if (!posted && returnUrl) {
+      localStorage.removeItem('paymentReturn');
+      location.href = returnUrl + '?status=' + status;
+    }
+
+    // No fallback or opener: show result
+    const msg = document.getElementById('msg');
+    if (status === 'ok') msg.innerHTML = '<span class="ok">✓ Payment Successful</span>';
+    else if (status === 'cancel') msg.innerHTML = '<span class="fail">✖ Payment Cancelled</span>';
+    else msg.textContent = 'Unknown status';
+  </script>
+</body>
+</html>

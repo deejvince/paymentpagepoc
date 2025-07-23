@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mock Payment Page</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 400px;
+      margin: 50px auto;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      position: relative;
+    }
+    h1 { text-align: center; }
+    .amount-buttons {
+      display: flex;
+      gap: 10px;
+      margin: 15px 0;
+    }
+    .amount-buttons button {
+      flex: 1;
+      border: 1px solid #00b894;
+      background: #eafaf5;
+      color: #00b894;
+      padding: 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    input[type=number], .form-field input {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    .btn {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-deposit {
+      background: #748fb3;
+      color: white;
+    }
+    .btn-cancel {
+      background: #ddd;
+      color: #333;
+    }
+    .status {
+      margin-top: 20px;
+      text-align: center;
+      font-weight: bold;
+    }
+    .overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(255,255,255,0.95);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 20px;
+      text-align: center;
+    }
+    .overlay.active { display: flex; }
+    .spinner {
+      margin: 20px auto;
+      width: 40px;
+      height: 40px;
+      border: 4px solid #ccc;
+      border-top: 4px solid #0070ba;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .form-field { text-align: left; margin-bottom: 15px; }
+    .form-field label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .result-icon {
+      font-size: 40px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+<h1>Deposit Funds</h1>
+<label>Amount (£10 – £6,000)</label>
+<div class="amount-buttons">
+  <button onclick="document.getElementById('amount').value=10">£10</button>
+  <button onclick="document.getElementById('amount').value=20">£20</button>
+  <button onclick="document.getElementById('amount').value=50">£50</button>
+</div>
+<input id="amount" type="number" min="10" placeholder="£ Other (Min £10)">
+<button class="btn btn-deposit" onclick="startDeposit()">Deposit</button>
+<div id="status" class="status"></div>
+<div id="overlay" class="overlay"></div>
+
+<script>
+let popup = null, watcher = null, extraFieldData = null;
+const overlay = document.getElementById('overlay');
+const statusEl = document.getElementById('status');
+
+window.addEventListener('message', e => {
+  if (e.data?.paymentResult === 'success') finish('Payment successful!', '#00b894');
+  else if (e.data?.paymentResult === 'failure') finish('Payment was cancelled.', '#e17055');
+});
+
+function showWaiting(msg) {
+  overlay.innerHTML = '<div class="spinner"></div><h2>' + msg + '</h2>';
+  overlay.classList.add('active');
+}
+
+function startDeposit() {
+  statusEl.innerHTML = '';
+  const amt = +document.getElementById('amount').value || 0;
+
+  popup = window.open('', 'paymentWin', 'width=500,height=700,resizable=yes,scrollbars=yes');
+  const popupBlocked = !popup;
+
+  if (popup && popup.document) {
+    popup.document.write('<p style="font-family:Arial;padding:100px;text-align:center">Preparing…</p>');
+    popup.document.close();
+  }
+
+  showWaiting('Please wait while we process your request…');
+
+  fetch('https://paypagemockapi.free.beeceptor.com/api/payment/init', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount: amt })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.redirectUrl) {
+      if (popupBlocked) {
+        localStorage.setItem('paymentReturn', location.href);
+        location.href = data.redirectUrl;
+      } else {
+        popup.location.href = data.redirectUrl;
+        startWatcher();
+        showWaiting('Redirecting you to the payment provider…<br><button class="btn btn-cancel" onclick="cancel()">Cancel</button>');
+      }
+    } else if (data.fields) {
+      if (!popupBlocked && popup && !popup.closed) { popup.close(); popup = null; }
+      extraFieldData = data;
+      askExtraFields(data.fields);
+    } else {
+      if (popup && !popup.closed) popup.close();
+      throw new Error('Unexpected response');
+    }
+  })
+  .catch(err => {
+    console.error(err);
+    finish('An error occurred. Please try again.', '#e17055');
+  });
+}
+
+function askExtraFields(fields) {
+  const html = fields.map(f => `
+    <div class="form-field">
+      <label>${f.label}</label>
+      <input name="${f.name}" type="text" required />
+    </div>`).join('');
+  overlay.innerHTML = `
+    <form id="extraForm">
+      <h2>Provide payment details</h2>
+      ${html}
+      <button class="btn btn-deposit" type="submit">Complete Payment</button>
+      <button class="btn btn-cancel" type="button" onclick="cancel()">Cancel</button>
+    </form>`;
+  overlay.classList.add('active');
+  document.getElementById('extraForm').onsubmit = completeViaPopup;
+}
+
+function completeViaPopup(e) {
+  e.preventDefault();
+  const formData = Object.fromEntries(new FormData(e.target).entries());
+  const payload = { ...extraFieldData, answers: formData };
+
+  const html = `
+    <html><body>
+      <p>Preparing payment…</p>
+      <script>
+        (function(){
+          const payload = ${JSON.stringify(payload)};
+          fetch("https://paypagemockapi.free.beeceptor.com/api/payment/submit-fields", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          })
+          .then(r => r.json())
+          .then(data => {
+            if (data.redirectUrl) {
+              location.href = data.redirectUrl;
+            } else if (data.success) {
+              window.opener?.postMessage({ paymentResult: "success" }, "*");
+              window.close();
+            } else {
+              document.body.innerHTML = "<h2>Payment failed.</h2>";
+            }
+          })
+          .catch(() => document.body.innerHTML = "<h2>Error communicating with PSP.</h2>");
+        })();
+      <\/script>
+    </body></html>`;
+
+  popup = window.open('', 'paymentWin', 'width=500,height=700,resizable=yes,scrollbars=yes');
+  if (popup) {
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
+  }
+
+  overlay.classList.remove('active');
+}
+
+function startWatcher() {
+  watcher = setInterval(() => {
+    if (!popup || popup.closed) {
+      clearInterval(watcher);
+      return;
+    }
+    try {
+      const url = new URL(popup.location.href);
+      if (url.pathname.endsWith('/return.html')) {
+        const status = url.searchParams.get('status');
+        if (status) {
+          finish(
+            status === 'ok' ? 'Payment successful!' : 'Payment was cancelled.',
+            status === 'ok' ? '#00b894' : '#e17055'
+          );
+        }
+        clearInterval(watcher);
+      }
+    } catch {}
+  }, 500);
+}
+
+function cancel() {
+  if (popup && !popup.closed) popup.close();
+  overlay.classList.remove('active');
+  statusEl.innerHTML = `
+    <div style="color: #e17055;">Payment was cancelled.</div>
+    <div class="result-icon fail">✖</div>`;
+}
+
+function finish(msg, color) {
+  if (popup && !popup.closed) popup.close();
+  clearInterval(watcher);
+  overlay.classList.remove('active');
+  const icon = color === '#00b894' ? '✓' : '✖';
+  statusEl.innerHTML = `
+    <div style="font-size: 20px; color: ${color};">${msg}</div>
+    <div class="result-icon" style="color: ${color}; font-size: 40px;">${icon}</div>`;
+}
+</script>
+</body>
+</html>
